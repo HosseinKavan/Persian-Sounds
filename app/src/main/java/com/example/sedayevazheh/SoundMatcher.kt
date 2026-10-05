@@ -5,7 +5,7 @@ object SoundMatcher {
     private val punctuation = Regex("[،؛؟!,.\\-_:؛\\[\\]{}()«»\\\"']")
     private val fillerWords = setOf("صدا", "صدای", "حرف", "اول", "آخر", "است", "هست", "میشه", "می‌شود")
 
-    private val aliases = mapOf(
+    private val aliases = linkedMapOf(
         "آ" to setOf("آ", "ا", "الف"),
         "ا" to setOf("ا", "الف"),
         "ب" to setOf("ب", "به"),
@@ -61,14 +61,21 @@ object SoundMatcher {
             .distinct()
     }
 
-    fun isMatch(target: String, recognitionResults: List<String>): Boolean {
+    fun allRecognitionPhrases(): List<String> =
+        aliases.values
+            .flatten()
+            .map(::normalize)
+            .filter { it.isNotBlank() }
+            .distinct()
+
+    fun isTopMatch(target: String, recognized: String): Boolean {
         val accepted = acceptedPhrases(target).toSet()
-        return recognitionResults.any { raw ->
-            val normalized = normalize(raw)
-            if (normalized in accepted) return@any true
-            val usefulTokens = normalized.split(" ")
-                .filter { it.isNotBlank() && it !in fillerWords }
-            usefulTokens.any { it in accepted } || usefulTokens.joinToString("") in accepted
-        }
+        val normalized = normalize(recognized)
+        if (normalized in accepted) return true
+
+        val usefulTokens = normalized.split(" ")
+            .filter { it.isNotBlank() && it !in fillerWords }
+
+        return usefulTokens.size == 1 && usefulTokens.first() in accepted
     }
 }
