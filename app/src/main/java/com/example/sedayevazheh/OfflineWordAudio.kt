@@ -24,6 +24,9 @@ class OfflineWordAudio(private val context: Context) {
     fun playWrong(onDone: () -> Unit = {}, onError: () -> Unit = {}) =
         playResource("feedback_wrong", onDone, onError)
 
+    fun playUnclear(onDone: () -> Unit = {}, onError: () -> Unit = {}) =
+        playResource("feedback_unclear", onDone, onError)
+
     fun playComplete(onDone: () -> Unit = {}, onError: () -> Unit = {}) =
         playResource("feedback_complete", onDone, onError)
 
