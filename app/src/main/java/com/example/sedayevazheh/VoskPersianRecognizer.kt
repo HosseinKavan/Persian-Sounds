@@ -9,6 +9,18 @@ import org.vosk.android.SpeechService
 import org.vosk.android.StorageService
 import java.io.IOException
 
+data class VoskChoice(
+    val text: String,
+    val confidence: Double,
+)
+
+data class VoskDecision(
+    val choices: List<VoskChoice>,
+) {
+    val best: VoskChoice? get() = choices.maxByOrNull { it.confidence }
+    val second: VoskChoice? get() = choices.sortedByDescending { it.confidence }.drop(1).firstOrNull()
+}
+
 class VoskPersianRecognizer(private val context: Context) : RecognitionListener {
     private var model: Model? = null
     private var speechService: SpeechService? = null
@@ -16,10 +28,10 @@ class VoskPersianRecognizer(private val context: Context) : RecognitionListener 
 
     private var onReadyState: ((Boolean, String) -> Unit)? = null
     private var onListening: (() -> Unit)? = null
-    private var onResultCallback: ((List<String>) -> Unit)? = null
+    private var onResultCallback: ((VoskDecision) -> Unit)? = null
     private var onFailure: ((String) -> Unit)? = null
 
-    private var partialText: String = ""
+    private var lastHypothesis: String = ""
     private var finished = false
 
     val isReady: Boolean get() = model != null
@@ -42,9 +54,8 @@ class VoskPersianRecognizer(private val context: Context) : RecognitionListener 
     }
 
     fun start(
-        target: String,
         onListeningStarted: () -> Unit,
-        onResult: (List<String>) -> Unit,
+        onResult: (VoskDecision) -> Unit,
         onError: (String) -> Unit
     ) {
         val loadedModel = model ?: run {
@@ -54,17 +65,20 @@ class VoskPersianRecognizer(private val context: Context) : RecognitionListener 
 
         stop()
         finished = false
-        partialText = ""
+        lastHypothesis = ""
         onListening = onListeningStarted
         onResultCallback = onResult
         onFailure = onError
 
         try {
-            val grammar = buildGrammar(target)
-            recognizer = Recognizer(loadedModel, 16000.0f, grammar)
+            val grammar = buildFullAlphabetGrammar()
+            recognizer = Recognizer(loadedModel, 16000.0f, grammar).also {
+                it.setMaxAlternatives(5)
+                it.setWords(true)
+            }
             speechService = SpeechService(recognizer, 16000.0f)
             onListening?.invoke()
-            speechService?.startListening(this, 5000)
+            speechService?.startListening(this, 5500)
         } catch (e: IOException) {
             cleanupRecognition()
             onError("میکروفون آماده نشد: ${e.message ?: "خطا"}")
@@ -74,43 +88,27 @@ class VoskPersianRecognizer(private val context: Context) : RecognitionListener 
         }
     }
 
-    private fun buildGrammar(target: String): String {
-        val words = SoundMatcher.acceptedPhrases(target)
-            .flatMap { phrase ->
-                listOf(phrase, "حرف $phrase", "صدای $phrase")
-            }
-            .distinct()
-            .toMutableList()
-        words += "[unk]"
-        return words.joinToString(prefix = "[", postfix = "]") { phrase ->
-            JSONObject.quote(phrase)
-        }
-    }
-
-    private fun extractText(json: String, key: String): String = try {
-        JSONObject(json).optString(key, "").trim()
-    } catch (_: Exception) {
-        ""
+    private fun buildFullAlphabetGrammar(): String {
+        val phrases = SoundMatcher.allRecognitionPhrases().toMutableList()
+        phrases += "[unk]"
+        return phrases.joinToString(prefix = "[", postfix = "]") { JSONObject.quote(it) }
     }
 
     override fun onPartialResult(hypothesis: String?) {
-        val text = hypothesis?.let { extractText(it, "partial") }.orEmpty()
-        if (text.isNotBlank()) partialText = text
+        if (!hypothesis.isNullOrBlank()) lastHypothesis = hypothesis
     }
 
     override fun onResult(hypothesis: String?) {
-        val text = hypothesis?.let { extractText(it, "text") }.orEmpty()
-        if (text.isNotBlank()) partialText = text
+        if (!hypothesis.isNullOrBlank()) lastHypothesis = hypothesis
     }
 
     override fun onFinalResult(hypothesis: String?) {
-        val text = hypothesis?.let { extractText(it, "text") }.orEmpty()
-            .ifBlank { partialText }
-        finishWith(text)
+        val json = hypothesis?.takeIf { it.isNotBlank() } ?: lastHypothesis
+        finishWith(json)
     }
 
     override fun onTimeout() {
-        finishWith(partialText)
+        finishWith(lastHypothesis)
     }
 
     override fun onError(exception: Exception?) {
@@ -120,46 +118,75 @@ class VoskPersianRecognizer(private val context: Context) : RecognitionListener 
         onFailure?.invoke("شنیدن صدا با خطا روبه‌رو شد؛ دوباره تلاش کن")
     }
 
-    private fun finishWith(text: String) {
+    private fun finishWith(json: String) {
         if (finished) return
         finished = true
+
+        val decision = parseDecision(json)
         cleanupRecognition()
 
-        if (text.isBlank()) {
-            onFailure?.invoke("صدایی تشخیص ندادم؛ بعد از «گوش می‌دهم» کمی واضح‌تر بگو")
+        if (decision.choices.isEmpty()) {
+            onFailure?.invoke("صدات رو خوب نشنیدم؛ یک بار دیگه، آروم و واضح بگو")
         } else {
-            onResultCallback?.invoke(listOf(text))
+            onResultCallback?.invoke(decision)
+        }
+    }
+
+    private fun parseDecision(json: String): VoskDecision {
+        if (json.isBlank()) return VoskDecision(emptyList())
+        return try {
+            val obj = JSONObject(json)
+            val choices = mutableListOf<VoskChoice>()
+
+            val alternatives = obj.optJSONArray("alternatives")
+            if (alternatives != null) {
+                for (i in 0 until alternatives.length()) {
+                    val item = alternatives.optJSONObject(i) ?: continue
+                    val text = item.optString("text", "").trim()
+                    val confidence = item.optDouble("confidence", 0.0)
+                    if (text.isNotBlank() && text != "[unk]") {
+                        choices += VoskChoice(text, confidence)
+                    }
+                }
+            } else {
+                val text = obj.optString("text", "").trim()
+                if (text.isNotBlank() && text != "[unk]") {
+                    val words = obj.optJSONArray("result")
+                    val confidence = if (words != null && words.length() > 0) {
+                        var sum = 0.0
+                        var count = 0
+                        for (i in 0 until words.length()) {
+                            val w = words.optJSONObject(i) ?: continue
+                            sum += w.optDouble("conf", 0.0)
+                            count++
+                        }
+                        if (count > 0) sum / count else 0.0
+                    } else 0.0
+                    choices += VoskChoice(text, confidence)
+                }
+            }
+
+            VoskDecision(choices.distinctBy { SoundMatcher.normalize(it.text) })
+        } catch (_: Exception) {
+            VoskDecision(emptyList())
         }
     }
 
     fun stop() {
-        try {
-            speechService?.stop()
-        } catch (_: Exception) {
-        }
+        try { speechService?.stop() } catch (_: Exception) {}
         cleanupRecognition()
     }
 
     private fun cleanupRecognition() {
-        try {
-            speechService?.shutdown()
-        } catch (_: Exception) {
-        }
+        try { speechService?.shutdown() } catch (_: Exception) {}
         speechService = null
-
-        try {
-            recognizer?.close()
-        } catch (_: Exception) {
-        }
+        try { recognizer?.close() } catch (_: Exception) {}
         recognizer = null
     }
 
     fun destroy() {
         stop()
-        try {
-            model?.close()
-        } catch (_: Exception) {
-        }
+        try { model?.close() } catch (_: Exception) {}
         model = null
     }
 }
