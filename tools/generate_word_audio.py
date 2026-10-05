@@ -53,6 +53,7 @@ async def main():
 
     await synth("آفرین! درست گفتی.", OUT / "feedback_correct.mp3", "-24%")
     await synth("این یکی درست نبود. دوباره آروم و واضح بگو.", OUT / "feedback_wrong.mp3", "-28%")
+    await synth("صدات رو خوب نشنیدم. یک بار دیگه بگو.", OUT / "feedback_unclear.mp3", "-28%")
     await synth("عالی بود! هر دو صدا درست بود. بریم سراغ واژه‌ی بعدی.", OUT / "feedback_complete.mp3", "-25%")
     await synth("گوش می‌دم. حالا بگو.", OUT / "prompt_listening.mp3", "-30%")
 
