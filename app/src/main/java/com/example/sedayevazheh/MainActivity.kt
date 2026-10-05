@@ -81,9 +81,14 @@ private fun PersianSoundsApp() {
 
     LaunchedEffect(currentIndex) {
         delay(350)
-        audio.play(word.id) {
-            message = "فایل صدای این واژه پیدا نشد"
-        }
+        audio.playWord(
+            word.id,
+            onDone = {
+                audio.playFirstQuestion(word.id)
+                message = "صدای اولِ ${word.word} چیه؟"
+            },
+            onError = { message = "فایل صدای این واژه پیدا نشد" }
+        )
     }
 
     fun resetExercise() {
@@ -120,35 +125,84 @@ private fun PersianSoundsApp() {
             val target = if (phase == SoundPhase.FIRST) word.firstSound else word.lastSound
             listening = true
             message = "آماده شو…"
-            recognizer.start(
-                target = target,
-                onListeningStarted = {
-                    listening = true
-                    message = "🎤 گوش می‌دهم… حالا بگو"
-                },
-                onResult = { alternatives ->
-                    listening = false
-                    val correct = SoundMatcher.isMatch(target, alternatives)
-                    statsStore.record(word.id, phase, correct)
-                    statsVersion++
 
-                    if (correct && phase == SoundPhase.FIRST) {
-                        phase = SoundPhase.LAST
-                        celebration = true
-                        message = "آفرین! ⭐ حالا صدای آخر را بگو"
-                    } else if (correct && phase == SoundPhase.LAST) {
-                        phase = SoundPhase.COMPLETE
-                        celebration = true
-                        message = "عالی بود! هر دو صدا درست بود 🎉"
-                    } else {
-                        celebration = false
-                        message = "نزدیک بود! یک بار دیگر امتحان کن 🌈"
-                    }
+            audio.playListening(
+                onDone = {
+                    recognizer.start(
+                        onListeningStarted = {
+                            listening = true
+                            message = "🎤 گوش می‌دم… حالا بگو"
+                        },
+                        onResult = { decision ->
+                            listening = false
+                            val best = decision.best
+                            val bestText = best?.text.orEmpty()
+                            val confidentEnough =
+                                best != null && (best.confidence <= 0.0 || best.confidence >= 0.50)
+
+                            if (!confidentEnough) {
+                                celebration = false
+                                message = "صدات رو خوب نشنیدم؛ یک بار دیگه بگو"
+                                audio.playUnclear(
+                                    onDone = {
+                                        if (phase == SoundPhase.FIRST) {
+                                            audio.playFirstQuestion(word.id)
+                                        } else {
+                                            audio.playLastQuestion(word.id)
+                                        }
+                                    }
+                                )
+                            } else {
+                                val correct = SoundMatcher.isTopMatch(target, bestText)
+                                statsStore.record(word.id, phase, correct)
+                                statsVersion++
+
+                                if (correct && phase == SoundPhase.FIRST) {
+                                    phase = SoundPhase.LAST
+                                    celebration = true
+                                    message = "آفرین! درست گفتی ⭐ حالا صدای آخرِ ${word.word} چیه؟"
+                                    audio.playCorrect(
+                                        onDone = { audio.playLastQuestion(word.id) }
+                                    )
+                                } else if (correct && phase == SoundPhase.LAST) {
+                                    phase = SoundPhase.COMPLETE
+                                    celebration = true
+                                    message = "عالی بود! هر دو صدا درست بود 🎉"
+                                    audio.playComplete()
+                                } else {
+                                    celebration = false
+                                    message = "این صدا درست نبود؛ دوباره امتحان کن 🌈"
+                                    audio.playWrong(
+                                        onDone = {
+                                            if (phase == SoundPhase.FIRST) {
+                                                audio.playFirstQuestion(word.id)
+                                            } else {
+                                                audio.playLastQuestion(word.id)
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        },
+                        onError = { error ->
+                            listening = false
+                            celebration = false
+                            message = error
+                            audio.playUnclear(
+                                onDone = {
+                                    if (phase == SoundPhase.FIRST) {
+                                        audio.playFirstQuestion(word.id)
+                                    } else {
+                                        audio.playLastQuestion(word.id)
+                                    }
+                                }
+                            )
+                        }
+                    )
                 },
-                onError = { error ->
+                onError = {
                     listening = false
-                    celebration = false
-                    message = error
+                    message = "صدای راهنما پخش نشد؛ دوباره تلاش کن"
                 }
             )
         }
@@ -186,7 +240,17 @@ private fun PersianSoundsApp() {
             celebration = celebration,
             stats = statsStore.get(word.id),
             onRepeat = {
-                audio.play(word.id) { message = "فایل صدای این واژه پیدا نشد" }
+                audio.playWord(
+                    word.id,
+                    onDone = {
+                        if (phase == SoundPhase.FIRST) {
+                            audio.playFirstQuestion(word.id)
+                        } else if (phase == SoundPhase.LAST) {
+                            audio.playLastQuestion(word.id)
+                        }
+                    },
+                    onError = { message = "فایل صدای این واژه پیدا نشد" }
+                )
             },
             onMic = { requestListening() },
             onRetry = { resetExercise() },
@@ -400,11 +464,24 @@ private fun KidFlashCardScreen(
 
         if (phase == SoundPhase.COMPLETE) {
             Spacer(Modifier.height(10.dp))
-            FilledTonalButton(
-                onClick = onRetry,
-                colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color(0xFFE9FFF1))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("↻ دوباره تمرین کن", color = Color(0xFF1B7F4B), fontWeight = FontWeight.Bold)
+                FilledTonalButton(
+                    onClick = onRetry,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color(0xFFE9FFF1))
+                ) {
+                    Text("↻ دوباره تمرین کن", color = Color(0xFF1B7F4B), fontWeight = FontWeight.Bold)
+                }
+                Button(
+                    onClick = onNext,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = Purple)
+                ) {
+                    Text("واژه بعدی ←", fontWeight = FontWeight.Bold)
+                }
             }
         }
 
