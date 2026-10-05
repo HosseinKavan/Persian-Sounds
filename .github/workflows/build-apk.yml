@@ -45,7 +45,7 @@ jobs:
       - name: Generate phoneme targets and AvaSanj ONNX model
         shell: bash
         run: |
-          python3 -m pip install --disable-pip-version-check             "torch>=2.5"             "transformers>=4.50"             "huggingface_hub>=0.30"             "onnx>=1.17"             "onnxruntime>=1.22"
+          python3 -m pip install --disable-pip-version-check             "torch>=2.5"             "transformers>=4.50"             "huggingface_hub>=0.30"             "onnx>=1.17"             "onnxruntime>=1.22"             "onnxscript>=0.3"
           python3 tools/generate_phoneme_targets.py
           python3 tools/export_avasanj_onnx.py
           test -f app/src/main/assets/phoneme_targets.json
