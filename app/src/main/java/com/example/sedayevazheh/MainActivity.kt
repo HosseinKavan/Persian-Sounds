@@ -1,6 +1,7 @@
 package com.example.sedayevazheh
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -65,9 +66,13 @@ private fun PersianSoundsApp() {
     var showStats by remember { mutableStateOf(false) }
     var statsVersion by remember { mutableIntStateOf(0) }
     var ttsReady by remember { mutableStateOf(false) }
+    var ttsStatus by remember { mutableStateOf("در حال آماده‌سازی صدای فارسی…") }
 
     val tts = remember {
-        PersianTts(context) { ready -> ttsReady = ready }
+        PersianTts(context) { ready, status ->
+            ttsReady = ready
+            ttsStatus = status
+        }
     }
     val speech = remember { PersianSpeechRecognizer(context) }
 
@@ -81,7 +86,9 @@ private fun PersianSoundsApp() {
     val word = words[currentIndex]
 
     LaunchedEffect(currentIndex, ttsReady) {
-        if (ttsReady) tts.speak(word.word)
+        if (ttsReady) {
+            tts.speak(word.word)
+        }
     }
 
     fun resetExercise(newMessage: String = "صدای اول واژه را بگو") {
@@ -175,7 +182,23 @@ private fun PersianSoundsApp() {
             message = message,
             listening = listening,
             ttsReady = ttsReady,
-            onRepeat = { tts.speak(word.word) },
+            ttsStatus = ttsStatus,
+            onRepeat = {
+                if (ttsReady) {
+                    val started = tts.speak(word.word)
+                    if (!started) {
+                        message = "خواندن واژه شروع نشد؛ دوباره امتحان کن"
+                    }
+                } else {
+                    tts.refresh()
+                    message = "$ttsStatus — برای فعال‌کردن صدا، تنظیمات تبدیل متن به گفتار گوشی را بررسی کن"
+                    try {
+                        context.startActivity(Intent("com.android.settings.TTS_SETTINGS"))
+                    } catch (_: Exception) {
+                        // Some manufacturers do not expose the standard TTS settings activity.
+                    }
+                }
+            },
             onMic = { requestListening() },
             onRetry = {
                 phase = SoundPhase.FIRST
@@ -198,6 +221,7 @@ private fun FlashCardScreen(
     message: String,
     listening: Boolean,
     ttsReady: Boolean,
+    ttsStatus: String,
     onRepeat: () -> Unit,
     onMic: () -> Unit,
     onRetry: () -> Unit,
@@ -239,15 +263,25 @@ private fun FlashCardScreen(
                         textAlign = TextAlign.Center
                     )
                     Spacer(Modifier.height(10.dp))
-                    Text(
-                        text = when (phase) {
-                            SoundPhase.FIRST -> "صدای اول"
-                            SoundPhase.LAST -> "صدای آخر"
-                            SoundPhase.COMPLETE -> "تمام شد ✓"
-                        },
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        Text(
+                            text = if (phase == SoundPhase.FIRST) "① صدای اول ← اکنون" else "① صدای اول ✓",
+                            fontSize = 18.sp,
+                            fontWeight = if (phase == SoundPhase.FIRST) FontWeight.Bold else FontWeight.Normal
+                        )
+                        Text(
+                            text = when (phase) {
+                                SoundPhase.FIRST -> "② صدای آخر"
+                                SoundPhase.LAST -> "② صدای آخر ← اکنون"
+                                SoundPhase.COMPLETE -> "② صدای آخر ✓"
+                            },
+                            fontSize = 18.sp,
+                            fontWeight = if (phase == SoundPhase.LAST) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
                 }
             }
 
@@ -262,9 +296,19 @@ private fun FlashCardScreen(
 
             Spacer(Modifier.height(16.dp))
 
+            if (!ttsReady) {
+                Text(
+                    text = "🔈 $ttsStatus",
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = onRepeat, enabled = ttsReady) {
-                    Text("🔊 دوباره بخوان")
+                OutlinedButton(onClick = onRepeat) {
+                    Text(if (ttsReady) "🔊 دوباره بخوان" else "🔊 فعال‌کردن صدا")
                 }
                 Button(
                     onClick = onMic,
