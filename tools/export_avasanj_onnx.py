@@ -24,6 +24,7 @@ class Wrapper(torch.nn.Module):
         return self.m(input_values).logits
 
 wrapper = Wrapper(model)
+wrapper.eval()
 dummy = torch.zeros(1, 16000, dtype=torch.float32)
 fp32 = OUT / "avasanj_fp32.onnx"
 int8 = OUT / "avasanj_int8.onnx"
@@ -41,6 +42,7 @@ torch.onnx.export(
     },
     opset_version=17,
     do_constant_folding=True,
+    dynamo=False,
 )
 
 print("Quantizing...")
