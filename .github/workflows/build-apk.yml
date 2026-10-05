@@ -11,7 +11,7 @@ permissions:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
@@ -42,16 +42,15 @@ jobs:
       - name: Validate word data
         run: python3 tools/validate_words.py
 
-      - name: Bundle Persian Vosk model
+      - name: Generate phoneme targets and AvaSanj ONNX model
         shell: bash
         run: |
-          rm -rf app/src/main/assets/model-fa /tmp/vosk-fa
-          mkdir -p /tmp/vosk-fa
-          curl -L --fail --retry 3             -o /tmp/vosk-fa/model.zip             https://huggingface.co/localstack/vosk-models/resolve/main/vosk-model-small-fa-0.42.zip
-          unzip -q /tmp/vosk-fa/model.zip -d /tmp/vosk-fa
-          mv /tmp/vosk-fa/vosk-model-small-fa-0.42 app/src/main/assets/model-fa
-          printf 'persian-sounds-v1.3\n' > app/src/main/assets/model-fa/uuid
-          test -f app/src/main/assets/model-fa/am/final.mdl
+          python3 -m pip install --disable-pip-version-check             "torch>=2.5"             "transformers>=4.50"             "huggingface_hub>=0.30"             "onnx>=1.17"             "onnxruntime>=1.22"
+          python3 tools/generate_phoneme_targets.py
+          python3 tools/export_avasanj_onnx.py
+          test -f app/src/main/assets/phoneme_targets.json
+          test -f app/src/main/assets/avasanj/avasanj_int8.onnx
+          test -f app/src/main/assets/avasanj/vocabulary.json
 
       - name: Generate natural Persian lesson audio
         shell: bash
@@ -66,16 +65,19 @@ jobs:
           test -f app/src/main/res/raw/feedback_unclear.mp3
           test -f app/src/main/res/raw/feedback_complete.mp3
 
-      - name: Run tests and build v1.3 APK
+      - name: Run tests and build v1.4 APK
         run: gradle --no-daemon test assembleDebug
 
       - name: Prepare named APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk Persian-Sounds-v1.3-offline-debug.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk Persian-Sounds-v1.4-phoneme-debug.apk
+
+      - name: Show APK size
+        run: ls -lh Persian-Sounds-v1.4-phoneme-debug.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Persian-Sounds-v1.3-offline-apk
-          path: Persian-Sounds-v1.3-offline-debug.apk
+          name: Persian-Sounds-v1.4-phoneme-apk
+          path: Persian-Sounds-v1.4-phoneme-debug.apk
           if-no-files-found: error
           retention-days: 90
