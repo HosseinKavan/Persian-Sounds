@@ -6,9 +6,9 @@ object SoundMatcher {
     private val fillerWords = setOf("صدا", "صدای", "حرف", "اول", "آخر", "است", "هست", "میشه", "می‌شود")
 
     private val aliases = mapOf(
-        "آ" to setOf("آ", "ا", "الف", "آلف"),
+        "آ" to setOf("آ", "ا", "الف"),
         "ا" to setOf("ا", "الف"),
-        "ب" to setOf("ب", "به", "بِ"),
+        "ب" to setOf("ب", "به"),
         "پ" to setOf("پ", "په"),
         "ت" to setOf("ت", "ته"),
         "ث" to setOf("ث", "ثه"),
@@ -19,7 +19,7 @@ object SoundMatcher {
         "د" to setOf("د", "دال", "ده"),
         "ذ" to setOf("ذ", "ذال"),
         "ر" to setOf("ر", "را", "راء"),
-        "ز" to setOf("ز", "زا", "زِ"),
+        "ز" to setOf("ز", "زا"),
         "ژ" to setOf("ژ", "ژه"),
         "س" to setOf("س", "سین", "سه"),
         "ش" to setOf("ش", "شین", "شه"),
@@ -38,7 +38,7 @@ object SoundMatcher {
         "ن" to setOf("ن", "نون", "نه"),
         "و" to setOf("و", "واو"),
         "ه" to setOf("ه", "ها", "هاء", "هه"),
-        "ی" to setOf("ی", "یا", "یِ", "یاء"),
+        "ی" to setOf("ی", "یا", "یاء"),
     )
 
     fun normalize(raw: String): String = raw
@@ -53,19 +53,21 @@ object SoundMatcher {
         .replace(Regex("\\s+"), " ")
         .trim()
 
-    fun isMatch(target: String, recognitionResults: List<String>): Boolean {
-        val normalizedTarget = normalize(target)
-        val accepted = (aliases[normalizedTarget].orEmpty() + normalizedTarget)
+    fun acceptedPhrases(target: String): List<String> {
+        val key = normalize(target)
+        return (aliases[key].orEmpty() + key)
             .map(::normalize)
-            .toSet()
+            .filter { it.isNotBlank() }
+            .distinct()
+    }
 
+    fun isMatch(target: String, recognitionResults: List<String>): Boolean {
+        val accepted = acceptedPhrases(target).toSet()
         return recognitionResults.any { raw ->
             val normalized = normalize(raw)
             if (normalized in accepted) return@any true
-
             val usefulTokens = normalized.split(" ")
                 .filter { it.isNotBlank() && it !in fillerWords }
-
             usefulTokens.any { it in accepted } || usefulTokens.joinToString("") in accepted
         }
     }
