@@ -47,7 +47,7 @@ jobs:
         run: |
           rm -rf app/src/main/assets/model-fa /tmp/vosk-fa
           mkdir -p /tmp/vosk-fa
-          curl -L --fail --retry 3             -o /tmp/vosk-fa/model.zip             https://alphacephei.com/vosk/models/vosk-model-small-fa-0.42.zip
+          curl -L --fail --retry 3             -o /tmp/vosk-fa/model.zip             https://huggingface.co/localstack/vosk-models/resolve/main/vosk-model-small-fa-0.42.zip
           unzip -q /tmp/vosk-fa/model.zip -d /tmp/vosk-fa
           mv /tmp/vosk-fa/vosk-model-small-fa-0.42 app/src/main/assets/model-fa
           printf 'persian-sounds-v1.3\n' > app/src/main/assets/model-fa/uuid
