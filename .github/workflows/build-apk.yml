@@ -11,7 +11,7 @@ permissions:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -50,29 +50,32 @@ jobs:
           curl -L --fail --retry 3             -o /tmp/vosk-fa/model.zip             https://alphacephei.com/vosk/models/vosk-model-small-fa-0.42.zip
           unzip -q /tmp/vosk-fa/model.zip -d /tmp/vosk-fa
           mv /tmp/vosk-fa/vosk-model-small-fa-0.42 app/src/main/assets/model-fa
-          printf 'persian-sounds-v1.2\n' > app/src/main/assets/model-fa/uuid
+          printf 'persian-sounds-v1.3\n' > app/src/main/assets/model-fa/uuid
           test -f app/src/main/assets/model-fa/am/final.mdl
 
-      - name: Generate 50 bundled Persian word recordings
+      - name: Generate natural Persian lesson audio
         shell: bash
         run: |
-          python3 -m pip install --disable-pip-version-check "piper-tts==1.8.0"
-          mkdir -p /tmp/piper-fa
-          curl -L --fail --retry 3             -o /tmp/piper-fa/fa_IR-amir-medium.onnx             https://huggingface.co/rhasspy/piper-voices/resolve/main/fa/fa_IR/amir/medium/fa_IR-amir-medium.onnx
-          curl -L --fail --retry 3             -o /tmp/piper-fa/fa_IR-amir-medium.onnx.json             https://huggingface.co/rhasspy/piper-voices/resolve/main/fa/fa_IR/amir/medium/fa_IR-amir-medium.onnx.json
-          python3 tools/generate_word_audio.py /tmp/piper-fa/fa_IR-amir-medium.onnx
-          test "$(find app/src/main/res/raw -name 'word_*.wav' | wc -l)" -eq 50
+          python3 -m pip install --disable-pip-version-check edge-tts
+          python3 tools/generate_word_audio.py
+          test "$(find app/src/main/res/raw -name 'word_*.mp3' | wc -l)" -eq 50
+          test "$(find app/src/main/res/raw -name 'question_first_*.mp3' | wc -l)" -eq 50
+          test "$(find app/src/main/res/raw -name 'question_last_*.mp3' | wc -l)" -eq 50
+          test -f app/src/main/res/raw/feedback_correct.mp3
+          test -f app/src/main/res/raw/feedback_wrong.mp3
+          test -f app/src/main/res/raw/feedback_unclear.mp3
+          test -f app/src/main/res/raw/feedback_complete.mp3
 
-      - name: Run tests and build v1.2 APK
+      - name: Run tests and build v1.3 APK
         run: gradle --no-daemon test assembleDebug
 
       - name: Prepare named APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk Persian-Sounds-v1.2-offline-debug.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk Persian-Sounds-v1.3-offline-debug.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Persian-Sounds-v1.2-offline-apk
-          path: Persian-Sounds-v1.2-offline-debug.apk
+          name: Persian-Sounds-v1.3-offline-apk
+          path: Persian-Sounds-v1.3-offline-debug.apk
           if-no-files-found: error
           retention-days: 90
