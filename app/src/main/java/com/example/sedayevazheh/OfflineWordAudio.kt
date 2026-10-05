@@ -15,19 +15,24 @@ class OfflineWordAudio(private val context: Context) {
             return
         }
 
-        player = MediaPlayer.create(context, resourceId)?.also { mp ->
-            mp.setOnCompletionListener {
-                it.release()
-                if (player === it) player = null
-            }
-            mp.setOnErrorListener { mediaPlayer, _, _ ->
-                mediaPlayer.release()
-                if (player === mediaPlayer) player = null
-                onError()
-                true
-            }
-            mp.start()
-        } ?: onError()
+        val created = MediaPlayer.create(context, resourceId)
+        if (created == null) {
+            onError()
+            return
+        }
+
+        player = created
+        created.setOnCompletionListener { mediaPlayer ->
+            mediaPlayer.release()
+            if (player === mediaPlayer) player = null
+        }
+        created.setOnErrorListener { mediaPlayer, _, _ ->
+            mediaPlayer.release()
+            if (player === mediaPlayer) player = null
+            onError()
+            true
+        }
+        created.start()
     }
 
     fun stop() {
