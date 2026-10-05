@@ -1,41 +1,79 @@
 #!/usr/bin/env python3
+import asyncio
 import json
 import sys
-import wave
 from pathlib import Path
 
-from piper import PiperVoice, SynthesisConfig
+import edge_tts
 
 ROOT = Path(__file__).resolve().parents[1]
 WORDS = ROOT / "app" / "src" / "main" / "assets" / "words.json"
 OUT = ROOT / "app" / "src" / "main" / "res" / "raw"
 
-if len(sys.argv) != 2:
-    raise SystemExit("usage: generate_word_audio.py /path/to/fa_IR-amir-medium.onnx")
+VOICE = "fa-IR-DilaraNeural"
+RATE = "-28%"
+PITCH = "+0Hz"
+VOLUME = "+0%"
 
-model_path = Path(sys.argv[1])
-if not model_path.exists():
-    raise SystemExit(f"missing Piper model: {model_path}")
+# Short pronunciation overrides for words that neural TTS can otherwise rush.
+WORD_SPEECH_OVERRIDES = {
+    "آب": "آب.",
+    "او": "او.",
+    "ما": "ما.",
+    "تو": "تو.",
+    "پا": "پا.",
+    "دو": "دو.",
+}
 
-OUT.mkdir(parents=True, exist_ok=True)
-for old in OUT.glob("word_*.wav"):
-    old.unlink()
+async def synth(text: str, output: Path, rate: str = RATE):
+    communicate = edge_tts.Communicate(
+        text=text,
+        voice=VOICE,
+        rate=rate,
+        pitch=PITCH,
+        volume=VOLUME,
+    )
+    await communicate.save(str(output))
+    if not output.exists() or output.stat().st_size < 800:
+        raise RuntimeError(f"audio generation failed for: {text}")
 
-words = json.loads(WORDS.read_text(encoding="utf-8"))
-voice = PiperVoice.load(model_path)
-config = SynthesisConfig(
-    length_scale=1.08,
-    noise_scale=0.55,
-    noise_w_scale=0.70,
-    volume=1.05,
-    normalize_audio=True,
-)
+async def main():
+    OUT.mkdir(parents=True, exist_ok=True)
+    for pattern in (
+        "word_*.mp3",
+        "question_first_*.mp3",
+        "question_last_*.mp3",
+        "feedback_*.mp3",
+        "prompt_*.mp3",
+    ):
+        for old in OUT.glob(pattern):
+            old.unlink()
 
-for item in words:
-    output = OUT / f"word_{item['id']:02d}.wav"
-    with wave.open(str(output), "wb") as wav_file:
-        voice.synthesize_wav(item["word"], wav_file, syn_config=config)
-    if output.stat().st_size < 500:
-        raise RuntimeError(f"audio generation failed for {item['word']}")
+    words = json.loads(WORDS.read_text(encoding="utf-8"))
 
-print(f"Generated {len(words)} Persian word recordings in {OUT}")
+    await synth("آفرین! درست گفتی.", OUT / "feedback_correct.mp3", "-24%")
+    await synth("این یکی درست نبود. دوباره آروم و واضح بگو.", OUT / "feedback_wrong.mp3", "-28%")
+    await synth("عالی بود! هر دو صدا درست بود. بریم سراغ واژه‌ی بعدی.", OUT / "feedback_complete.mp3", "-25%")
+    await synth("گوش می‌دم. حالا بگو.", OUT / "prompt_listening.mp3", "-30%")
+
+    for item in words:
+        idx = item["id"]
+        word = item["word"]
+        spoken_word = WORD_SPEECH_OVERRIDES.get(word, word)
+
+        await synth(spoken_word, OUT / f"word_{idx:02d}.mp3", "-32%")
+        await synth(
+            f"صدای اولِ {word} چیه؟",
+            OUT / f"question_first_{idx:02d}.mp3",
+            "-30%",
+        )
+        await synth(
+            f"صدای آخرِ {word} چیه؟",
+            OUT / f"question_last_{idx:02d}.mp3",
+            "-30%",
+        )
+
+    print(f"Generated {len(words)} words + spoken instructions/feedback with {VOICE}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
