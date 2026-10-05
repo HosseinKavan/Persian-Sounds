@@ -21,3 +21,5 @@ Android speech recognition is designed mainly for words and phrases, not isolate
 ## GitHub Actions APK
 
 The workflow `.github/workflows/build-apk.yml` builds and uploads `SedayeVazheh-v1-debug.apk` on every push to `main`.
+
+Build status: GitHub Actions compiles the installable debug APK from the committed Android source.
