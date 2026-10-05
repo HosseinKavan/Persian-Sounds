@@ -54,14 +54,15 @@ private fun PersianSoundsApp() {
     val words = remember { WordRepository.load(context) }
     val statsStore = remember { StatsStore(context) }
     val audio = remember { OfflineWordAudio(context) }
-    val recognizer = remember { VoskPersianRecognizer(context) }
+    val recognizer = remember { AvaSanjPhonemeRecognizer(context) }
+    val phonemeTargets = remember { PhonemeTargetRepository(context) }
 
     var currentIndex by remember { mutableIntStateOf(0) }
     var phase by remember { mutableStateOf(SoundPhase.FIRST) }
     var message by remember { mutableStateOf("اول صدای واژه را خوب گوش کن 🌟") }
     var listening by remember { mutableStateOf(false) }
     var recognizerReady by remember { mutableStateOf(false) }
-    var recognizerStatus by remember { mutableStateOf("در حال آماده‌سازی شنیدن فارسی…") }
+    var recognizerStatus by remember { mutableStateOf("در حال آماده‌سازی شنیدن صدای فارسی…") }
     var showStats by remember { mutableStateOf(false) }
     var statsVersion by remember { mutableIntStateOf(0) }
     var celebration by remember { mutableStateOf(false) }
@@ -135,14 +136,35 @@ private fun PersianSoundsApp() {
                         },
                         onResult = { decision ->
                             listening = false
-                            val best = decision.best
-                            val bestText = best?.text.orEmpty()
+
+                            val targets = phonemeTargets.forWord(word.id)
+                            val expected = when (phase) {
+                                SoundPhase.FIRST -> targets?.first
+                                SoundPhase.LAST -> targets?.last
+                                SoundPhase.COMPLETE -> null
+                            }
+
+                            val heard = decision.tokens
+                                .filter { it.isNotBlank() }
+                                .joinToString("")
+
                             val confidentEnough =
-                                best != null && (best.confidence <= 0.0 || best.confidence >= 0.50)
+                                decision.tokens.isNotEmpty() &&
+                                decision.confidence >= 0.18
+
+                            val correct =
+                                confidentEnough &&
+                                expected != null &&
+                                decision.tokens.size <= 2 &&
+                                decision.tokens.any { it == expected }
 
                             if (!confidentEnough) {
                                 celebration = false
-                                message = "صدات رو خوب نشنیدم؛ یک بار دیگه بگو"
+                                message = if (heard.isBlank()) {
+                                    "صدات رو خوب نشنیدم؛ یک بار دیگه بگو"
+                                } else {
+                                    "صدات ضعیف بود؛ شنیدم: $heard"
+                                }
                                 audio.playUnclear(
                                     onDone = {
                                         if (phase == SoundPhase.FIRST) {
@@ -153,7 +175,6 @@ private fun PersianSoundsApp() {
                                     }
                                 )
                             } else {
-                                val correct = SoundMatcher.isTopMatch(target, bestText)
                                 statsStore.record(word.id, phase, correct)
                                 statsVersion++
 
@@ -171,7 +192,11 @@ private fun PersianSoundsApp() {
                                     audio.playComplete()
                                 } else {
                                     celebration = false
-                                    message = "این صدا درست نبود؛ دوباره امتحان کن 🌈"
+                                    message = if (heard.isBlank()) {
+                                        "این صدا درست نبود؛ دوباره امتحان کن 🌈"
+                                    } else {
+                                        "این صدا درست نبود؛ شنیدم: $heard"
+                                    }
                                     audio.playWrong(
                                         onDone = {
                                             if (phase == SoundPhase.FIRST) {
