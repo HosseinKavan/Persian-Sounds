@@ -144,59 +144,61 @@ private fun PersianSoundsApp() {
                                 SoundPhase.COMPLETE -> null
                             }
 
-                            val heard = decision.tokens
-                                .filter { it.isNotBlank() }
-                                .joinToString("")
+                            val assessment = ChildPhonemeScorer.assess(expected, decision)
+                            val heard = assessment.heardToken
+                                ?: decision.tokens.firstOrNull()
+                                ?: ""
 
-                            val confidentEnough =
-                                decision.tokens.isNotEmpty() &&
-                                decision.confidence >= 0.18
-
-                            val correct =
-                                confidentEnough &&
-                                expected != null &&
-                                decision.tokens.size <= 2 &&
-                                decision.tokens.any { it == expected }
-
-                            if (!confidentEnough) {
-                                celebration = false
-                                message = if (heard.isBlank()) {
-                                    "صدات رو خوب نشنیدم؛ یک بار دیگه بگو"
-                                } else {
-                                    "صدات ضعیف بود؛ شنیدم: $heard"
-                                }
-                                audio.playUnclear(
-                                    onDone = {
-                                        if (phase == SoundPhase.FIRST) {
-                                            audio.playFirstQuestion(word.id)
-                                        } else {
-                                            audio.playLastQuestion(word.id)
-                                        }
-                                    }
-                                )
-                            } else {
-                                statsStore.record(word.id, phase, correct)
-                                statsVersion++
-
-                                if (correct && phase == SoundPhase.FIRST) {
-                                    phase = SoundPhase.LAST
-                                    celebration = true
-                                    message = "آفرین! درست گفتی ⭐ حالا صدای آخرِ ${word.word} چیه؟"
-                                    audio.playCorrect(
-                                        onDone = { audio.playLastQuestion(word.id) }
-                                    )
-                                } else if (correct && phase == SoundPhase.LAST) {
-                                    phase = SoundPhase.COMPLETE
-                                    celebration = true
-                                    message = "عالی بود! هر دو صدا درست بود 🎉"
-                                    audio.playComplete()
-                                } else {
+                            when (assessment.verdict) {
+                                RecognitionVerdict.UNCERTAIN -> {
                                     celebration = false
+                                    message = if (heard.isBlank()) {
+                                        "صدات رو خوب نشنیدم؛ یک بار دیگه بگو"
+                                    } else {
+                                        "تقریباً شنیدم «$heard»؛ یک بار دیگه آروم و واضح بگو"
+                                    }
+
+                                    audio.playUnclear(
+                                        onDone = {
+                                            if (phase == SoundPhase.FIRST) {
+                                                audio.playFirstQuestion(word.id)
+                                            } else {
+                                                audio.playLastQuestion(word.id)
+                                            }
+                                        }
+                                    )
+                                }
+
+                                RecognitionVerdict.CORRECT -> {
+                                    statsStore.record(word.id, phase, true)
+                                    statsVersion++
+
+                                    if (phase == SoundPhase.FIRST) {
+                                        phase = SoundPhase.LAST
+                                        celebration = true
+                                        message = "آفرین! درست گفتی ⭐ حالا صدای آخرِ ${word.word} چیه؟"
+                                        audio.playCorrect(
+                                            onDone = { audio.playLastQuestion(word.id) }
+                                        )
+                                    } else if (phase == SoundPhase.LAST) {
+                                        phase = SoundPhase.COMPLETE
+                                        celebration = true
+                                        message = "عالی بود! هر دو صدا درست بود 🎉"
+                                        audio.playComplete()
+                                    }
+                                }
+
+                                RecognitionVerdict.WRONG -> {
+                                    statsStore.record(word.id, phase, false)
+                                    statsVersion++
+                                    celebration = false
+
                                     message = if (heard.isBlank()) {
                                         "این صدا درست نبود؛ دوباره امتحان کن 🌈"
                                     } else {
-                                        "این صدا درست نبود؛ شنیدم: $heard"
+                                        "این صدا درست نبود؛ فکر کردم «$heard» گفتی"
                                     }
+
                                     audio.playWrong(
                                         onDone = {
                                             if (phase == SoundPhase.FIRST) {
