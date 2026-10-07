@@ -348,7 +348,8 @@ class AvaSanjPhonemeRecognizer(private val context: Context) {
 
         val std = sqrt(variance + 1e-7).toFloat()
         for (i in floats.indices) {
-            floats[i] = ((floats[i] - mean) / std).coerceIn(-6f, 6f)
+            floats[i] = (((floats[i].toDouble() - mean) / std.toDouble())
+                .coerceIn(-6.0, 6.0)).toFloat()
         }
         return floats
     }
