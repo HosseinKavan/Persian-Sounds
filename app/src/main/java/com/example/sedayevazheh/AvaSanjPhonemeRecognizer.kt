@@ -167,6 +167,7 @@ class AvaSanjPhonemeRecognizer(private val context: Context) {
                 var offset = 0
 
                 recorder.startRecording()
+                handler.post { onListeningStarted() }
 
                 // First 300 ms acts as a room-noise calibration window.
                 // We intentionally keep it in the buffer so an eager child is not lost.
@@ -219,8 +220,6 @@ class AvaSanjPhonemeRecognizer(private val context: Context) {
 
                 val rms = calculateRms(trimmed)
                 val normalized = normalize(trimmed)
-
-                handler.post { onListeningStarted() }
 
                 val tensor = OnnxTensor.createTensor(
                     env,
