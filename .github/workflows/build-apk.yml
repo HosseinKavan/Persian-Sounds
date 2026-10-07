@@ -65,19 +65,41 @@ jobs:
           test -f app/src/main/res/raw/feedback_unclear.mp3
           test -f app/src/main/res/raw/feedback_complete.mp3
 
-      - name: Run tests and build v1.4 APK
+      - name: Run tests and build v1.5 APKs
         run: gradle --no-daemon test assembleDebug
 
-      - name: Prepare named APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk Persian-Sounds-v1.4-phoneme-debug.apk
+      - name: Prepare named APKs
+        shell: bash
+        run: |
+          echo "Available APK outputs:"
+          find app/build/outputs/apk -type f -name "*.apk" -print
 
-      - name: Show APK size
-        run: ls -lh Persian-Sounds-v1.4-phoneme-debug.apk
+          ARM64="$(find app/build/outputs/apk -type f -name "*arm64-v8a*debug*.apk" | head -n 1)"
+          UNIVERSAL="$(find app/build/outputs/apk -type f \( -name "*universal*debug*.apk" -o -name "app-debug.apk" \) | head -n 1)"
 
-      - name: Upload APK artifact
+          test -n "$ARM64"
+          test -n "$UNIVERSAL"
+
+          cp "$ARM64" Persian-Sounds-v1.5-arm64-debug.apk
+          cp "$UNIVERSAL" Persian-Sounds-v1.5-universal-debug.apk
+
+      - name: Show APK sizes
+        run: |
+          ls -lh Persian-Sounds-v1.5-arm64-debug.apk
+          ls -lh Persian-Sounds-v1.5-universal-debug.apk
+
+      - name: Upload ARM64 APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Persian-Sounds-v1.4-phoneme-apk
-          path: Persian-Sounds-v1.4-phoneme-debug.apk
+          name: Persian-Sounds-v1.5-arm64-apk
+          path: Persian-Sounds-v1.5-arm64-debug.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload universal APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Persian-Sounds-v1.5-universal-apk
+          path: Persian-Sounds-v1.5-universal-debug.apk
           if-no-files-found: error
           retention-days: 90
